@@ -9,8 +9,8 @@ class BlindSignature {
     // For this demo, we'll create a deterministic blinding that can be verified
     // In a real implementation, this would use proper mathematical blinding
     
-    // Hash the original message
-    const messageHash = crypto.createHash('sha256').update(message, 'hex').digest('hex');
+    // Hash the original message (treat as UTF-8 string)
+    const messageHash = crypto.createHash('sha256').update(message, 'utf8').digest('hex');
     
     // Create a simple "blinded" version by adding a prefix
     // This is NOT cryptographically secure blinding, just for demo purposes
@@ -44,8 +44,8 @@ class BlindSignature {
   // Verify unblinded signature
   static verify(signature, message, publicKeyPem) {
     try {
-      // Hash the message for verification
-      const messageHash = crypto.createHash('sha256').update(message, 'hex').digest('hex');
+      // Hash the message for verification (treat as UTF-8 string)
+      const messageHash = crypto.createHash('sha256').update(message, 'utf8').digest('hex');
       
       const isValid = crypto.verify(
         'sha256',

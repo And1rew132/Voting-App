@@ -105,6 +105,56 @@ app.post('/api/issuer/request-token', async (req, res) => {
   }
 });
 
+// Simplified token issuer for demo (handles blinding server-side)
+app.post('/api/issuer/request-token-simple', async (req, res) => {
+  try {
+    // Check authentication
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'unauthorized' });
+    }
+    
+    const userId = authHeader.split(' ')[1];
+    if (!userId) {
+      return res.status(401).json({ error: 'unauthorized' });
+    }
+    
+    // Check if token was already issued for this user
+    const wasIssued = await db.get(`issued:${userId}`);
+    if (wasIssued) {
+      return res.status(409).json({ error: 'already_issued' });
+    }
+    
+    // Get token from request
+    const { tokenHex } = req.body || {};
+    if (!tokenHex) {
+      return res.status(400).json({ error: 'missing_token' });
+    }
+    
+    if (!TI_PRIVATE_KEY_PEM) {
+      return res.status(500).json({ error: 'server_not_configured' });
+    }
+    
+    // Create blinded version of token and sign it (server-side blinding for demo)
+    const { blinded } = BlindSignature.blind(tokenHex, TI_PUBLIC_KEY_PEM);
+    const sigBlindedHex = BlindSignature.sign(blinded, TI_PRIVATE_KEY_PEM);
+    
+    // Unblind the signature (for demo purposes, return the final signature)
+    const finalSig = BlindSignature.unblind(sigBlindedHex, TI_PUBLIC_KEY_PEM, '');
+    
+    // Mark token as issued for this user
+    await db.set(`issued:${userId}`, true);
+    
+    return res.status(200).json({ 
+      tokenHex: tokenHex,
+      sigHex: finalSig
+    });
+  } catch (e) {
+    console.error('Simple issuer error:', e);
+    return res.status(500).json({ error: 'issuer_error' });
+  }
+});
+
 // 2) Ballot casting endpoint - validates tokens and records ballots
 app.post('/api/ballot/cast', async (req, res) => {
   try {

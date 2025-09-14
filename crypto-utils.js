@@ -17,7 +17,8 @@ function generateRSAKeypair() {
 
 // Hash function for token hashing
 function sha256Hex(data) {
-  return crypto.createHash('sha256').update(data, 'hex').digest('hex');
+  // Always treat as UTF-8 string to avoid encoding issues
+  return crypto.createHash('sha256').update(data, 'utf8').digest('hex');
 }
 
 // Generate random token
