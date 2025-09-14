@@ -4,9 +4,20 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const crypto = require('crypto');
+require('dotenv').config();
+
+// Import our blind signature and database modules
+const BlindSignature = require('./blind-signature');
+const { db, appendToBulletin } = require('./db');
+const { sha256Hex, generateRandomToken } = require('./crypto-utils');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Load RSA keys from environment
+const TI_PRIVATE_KEY_PEM = process.env.TI_PRIVATE_KEY_PEM?.replace(/\\n/g, '\n');
+const TI_PUBLIC_KEY_PEM = process.env.TI_PUBLIC_KEY_PEM?.replace(/\\n/g, '\n');
 
 // Security middleware with relaxed CSP for development
 app.use(helmet({
@@ -40,9 +51,192 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy', 
     timestamp: new Date().toISOString(),
-    polls: polls.length 
+    polls: polls.length,
+    blindSignatureEnabled: !!(TI_PRIVATE_KEY_PEM && TI_PUBLIC_KEY_PEM)
   });
 });
+
+// Blind signature endpoints
+
+// 1) Token Issuer endpoint - signs blinded tokens once per user
+app.post('/api/issuer/request-token', async (req, res) => {
+  try {
+    // For this demo, we'll use a simple authentication check
+    // In production, this would use proper OIDC/JWT verification
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'unauthorized' });
+    }
+    
+    // Extract user ID (in production, verify JWT token)
+    const token = authHeader.split(' ')[1];
+    const userId = token; // Simplified - in production decode JWT
+    
+    if (!userId) {
+      return res.status(401).json({ error: 'unauthorized' });
+    }
+    
+    // Check if token was already issued for this user
+    const wasIssued = await db.get(`issued:${userId}`);
+    if (wasIssued) {
+      return res.status(409).json({ error: 'already_issued' });
+    }
+    
+    // Get blinded token from request
+    const { blindedTokenHex } = req.body || {};
+    if (!blindedTokenHex) {
+      return res.status(400).json({ error: 'missing_blinded_token' });
+    }
+    
+    if (!TI_PRIVATE_KEY_PEM) {
+      return res.status(500).json({ error: 'server_not_configured' });
+    }
+    
+    // Sign the blinded message
+    const sigBlindedHex = BlindSignature.sign(blindedTokenHex, TI_PRIVATE_KEY_PEM);
+    
+    // Mark token as issued for this user
+    await db.set(`issued:${userId}`, true);
+    
+    return res.status(200).json({ sigBlindedHex });
+  } catch (e) {
+    console.error('Issuer error:', e);
+    return res.status(500).json({ error: 'issuer_error' });
+  }
+});
+
+// Simplified token issuer for demo (handles blinding server-side)
+app.post('/api/issuer/request-token-simple', async (req, res) => {
+  try {
+    // Check authentication
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'unauthorized' });
+    }
+    
+    const userId = authHeader.split(' ')[1];
+    if (!userId) {
+      return res.status(401).json({ error: 'unauthorized' });
+    }
+    
+    // Check if token was already issued for this user
+    const wasIssued = await db.get(`issued:${userId}`);
+    if (wasIssued) {
+      return res.status(409).json({ error: 'already_issued' });
+    }
+    
+    // Get token from request
+    const { tokenHex } = req.body || {};
+    if (!tokenHex) {
+      return res.status(400).json({ error: 'missing_token' });
+    }
+    
+    if (!TI_PRIVATE_KEY_PEM) {
+      return res.status(500).json({ error: 'server_not_configured' });
+    }
+    
+    // Create blinded version of token and sign it (server-side blinding for demo)
+    const { blinded } = BlindSignature.blind(tokenHex, TI_PUBLIC_KEY_PEM);
+    const sigBlindedHex = BlindSignature.sign(blinded, TI_PRIVATE_KEY_PEM);
+    
+    // Unblind the signature (for demo purposes, return the final signature)
+    const finalSig = BlindSignature.unblind(sigBlindedHex, TI_PUBLIC_KEY_PEM, '');
+    
+    // Mark token as issued for this user
+    await db.set(`issued:${userId}`, true);
+    
+    return res.status(200).json({ 
+      tokenHex: tokenHex,
+      sigHex: finalSig
+    });
+  } catch (e) {
+    console.error('Simple issuer error:', e);
+    return res.status(500).json({ error: 'issuer_error' });
+  }
+});
+
+// 2) Ballot casting endpoint - validates tokens and records ballots
+app.post('/api/ballot/cast', async (req, res) => {
+  try {
+    const { tokenHex, sigHex, ballot } = req.body || {};
+    
+    if (!tokenHex || !sigHex || !ballot) {
+      return res.status(400).json({ error: 'missing_fields' });
+    }
+    
+    if (!TI_PUBLIC_KEY_PEM) {
+      return res.status(500).json({ error: 'server_not_configured' });
+    }
+    
+    // Verify signature on token
+    const isValid = BlindSignature.verify(sigHex, tokenHex, TI_PUBLIC_KEY_PEM);
+    if (!isValid) {
+      return res.status(400).json({ error: 'invalid_token_signature' });
+    }
+    
+    // Check if token was already spent
+    const tokenHash = sha256Hex(tokenHex);
+    const spent = await db.get(`spent:${tokenHash}`);
+    if (spent) {
+      return res.status(409).json({ error: 'token_already_used' });
+    }
+    
+    // Record the ballot
+    const id = crypto.randomUUID();
+    const ts = Date.now();
+    
+    const ballotRecord = {
+      id,
+      ballot,
+      tokenHash,
+      ts
+    };
+    
+    // Mark token as spent and store ballot
+    await db.set(`spent:${tokenHash}`, true);
+    await appendToBulletin(ballotRecord);
+    
+    // Generate receipt
+    const receipt = sha256Hex(tokenHash + sha256Hex(JSON.stringify(ballot)));
+    
+    return res.status(200).json({ 
+      ok: true, 
+      id, 
+      tokenHash, 
+      receipt, 
+      ts 
+    });
+  } catch (e) {
+    console.error('Ballot cast error:', e);
+    return res.status(500).json({ error: 'ballot_box_error' });
+  }
+});
+
+// 3) Public Bulletin Board endpoint - list all ballots
+app.get('/api/pbb/list', async (req, res) => {
+  try {
+    const entries = await db.list('ballots:');
+    const items = entries.map(({ key, value }) => ({
+      id: key.split(':')[1],
+      ...value
+    }));
+    
+    return res.status(200).json({ items });
+  } catch (e) {
+    console.error('PBB error:', e);
+    return res.status(500).json({ error: 'pbb_error' });
+  }
+});
+
+// Get public key for verification
+app.get('/api/public-key', (req, res) => {
+  if (!TI_PUBLIC_KEY_PEM) {
+    return res.status(500).json({ error: 'server_not_configured' });
+  }
+  res.json({ publicKey: TI_PUBLIC_KEY_PEM });
+});
+
+// Legacy poll endpoints (keep for backward compatibility)
 
 // Get all polls
 app.get('/api/polls', (req, res) => {

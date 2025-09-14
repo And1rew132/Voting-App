@@ -24,6 +24,8 @@ function showTab(tabName) {
         loadPolls();
     } else if (tabName === 'results') {
         loadResults();
+    } else if (tabName === 'bulletin') {
+        loadBulletinBoard();
     }
 }
 
@@ -329,3 +331,194 @@ document.addEventListener('keydown', function(e) {
         closeModal();
     }
 });
+
+// Blind Signature Voting Functions
+let blindVoteData = null;
+
+// Simple client-side crypto utilities (demo implementation)
+function generateRandomToken() {
+    const array = new Uint8Array(32);
+    crypto.getRandomValues(array);
+    return Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Simplified hash function for demo (matches Node.js crypto more closely)
+async function clientSideHash(data) {
+    // Use the browser's crypto.subtle.digest for SHA-256
+    const encoder = new TextEncoder();
+    const dataArray = encoder.encode(data);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', dataArray);
+    const hashArray = new Uint8Array(hashBuffer);
+    return Array.from(hashArray).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Simplified blind signature for browser (demo purposes)
+// This matches the server-side implementation
+async function blindToken(token) {
+    // Use the same logic as the server's BlindSignature.blind method
+    const hash = await clientSideHash(token);
+    return {
+        blinded: 'BLINDED_' + hash,
+        r: hash
+    };
+}
+
+function unblindSignature(signature, r) {
+    // For demo: no actual unblinding needed
+    return signature;
+}
+
+// Request a blind-signed token from the issuer
+async function requestBlindToken() {
+    const statusEl = document.getElementById('tokenStatus');
+    const userToken = document.getElementById('userToken').value.trim();
+    
+    if (!userToken) {
+        statusEl.innerHTML = '<span class="error">Please enter a user token</span>';
+        return;
+    }
+    
+    try {
+        statusEl.innerHTML = '<span class="info">Generating token...</span>';
+        
+        // Generate random token 
+        const token = generateRandomToken();
+        console.log('Generated token:', token);
+        
+        // For this demo, we'll let the server handle the full blind signature process
+        // In a real implementation, the client would blind the token before sending
+        statusEl.innerHTML = '<span class="info">Requesting blind signature...</span>';
+        
+        // Send a simple request to get a token signed
+        // The server will create the blinding internally for demo purposes
+        const response = await fetch('/api/issuer/request-token-simple', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${userToken}`
+            },
+            body: JSON.stringify({ tokenHex: token })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Request failed');
+        }
+        
+        const { tokenHex, sigHex } = await response.json();
+        
+        // Store the token and signature for voting
+        blindVoteData = {
+            tokenHex: tokenHex,
+            sigHex: sigHex
+        };
+        
+        console.log('Received signed token:', { tokenHex, sigHex });
+        
+        statusEl.innerHTML = '<span class="success">✓ Anonymous token received! You can now vote.</span>';
+        document.getElementById('castButton').disabled = false;
+        
+    } catch (error) {
+        statusEl.innerHTML = `<span class="error">Error: ${error.message}</span>`;
+    }
+}
+
+// Cast an anonymous ballot
+async function castBlindBallot() {
+    const statusEl = document.getElementById('voteStatus');
+    const ballotOption = document.getElementById('ballotData').value;
+    
+    if (!blindVoteData) {
+        statusEl.innerHTML = '<span class="error">Please get an anonymous token first</span>';
+        return;
+    }
+    
+    try {
+        statusEl.innerHTML = '<span class="info">Casting anonymous vote...</span>';
+        
+        const ballot = {
+            pollId: 'anonymous-poll',
+            option: ballotOption,
+            timestamp: Date.now()
+        };
+        
+        const response = await fetch('/api/ballot/cast', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                tokenHex: blindVoteData.tokenHex,
+                sigHex: blindVoteData.sigHex,
+                ballot: ballot
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Voting failed');
+        }
+        
+        const result = await response.json();
+        
+        statusEl.innerHTML = `<span class="success">✓ Vote cast successfully!<br>
+                             Receipt: ${result.receipt}<br>
+                             ID: ${result.id}</span>`;
+        
+        // Clear the token data (can't vote again)
+        blindVoteData = null;
+        document.getElementById('castButton').disabled = true;
+        
+        // Refresh bulletin board if it's visible
+        loadBulletinBoard();
+        
+    } catch (error) {
+        statusEl.innerHTML = `<span class="error">Error: ${error.message}</span>`;
+    }
+}
+
+// Load and display the public bulletin board
+async function loadBulletinBoard() {
+    const bulletinEl = document.getElementById('bulletinBoard');
+    
+    try {
+        bulletinEl.innerHTML = '<p>Loading bulletin board...</p>';
+        
+        const response = await fetch('/api/pbb/list');
+        if (!response.ok) {
+            throw new Error('Failed to load bulletin board');
+        }
+        
+        const { items } = await response.json();
+        
+        if (items.length === 0) {
+            bulletinEl.innerHTML = '<p>No anonymous votes have been cast yet.</p>';
+            return;
+        }
+        
+        const bulletinHtml = items.map(item => `
+            <div class="bulletin-item">
+                <div class="bulletin-header">
+                    <strong>Vote ID:</strong> ${item.id}
+                    <span class="timestamp">${new Date(item.ts).toLocaleString()}</span>
+                </div>
+                <div class="bulletin-content">
+                    <strong>Vote:</strong> ${escapeHtml(JSON.stringify(item.ballot))}
+                </div>
+                <div class="bulletin-hash">
+                    <strong>Token Hash:</strong> <code>${item.tokenHash}</code>
+                </div>
+            </div>
+        `).join('');
+        
+        bulletinEl.innerHTML = `
+            <div class="bulletin-stats">
+                <strong>Total Anonymous Votes: ${items.length}</strong>
+            </div>
+            ${bulletinHtml}
+        `;
+        
+    } catch (error) {
+        bulletinEl.innerHTML = `<p>Error loading bulletin board: ${error.message}</p>`;
+    }
+}

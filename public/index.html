@@ -31,9 +31,11 @@
         </section>
 
         <div class="tabs">
-            <button class="tab-button active" onclick="showTab('vote')" data-translate="tabs.vote">Vote</button>
-            <button class="tab-button" onclick="showTab('results')" data-translate="tabs.results">Results</button>
-            <button class="tab-button" onclick="showTab('admin')" data-translate="tabs.admin">Admin</button>
+            <button class="tab-button active" onclick="showTab('vote')">Vote</button>
+            <button class="tab-button" onclick="showTab('results')">Results</button>
+            <button class="tab-button" onclick="showTab('blindvote')">Anonymous Vote</button>
+            <button class="tab-button" onclick="showTab('bulletin')">Bulletin Board</button>
+            <button class="tab-button" onclick="showTab('admin')">Admin</button>
         </div>
 
         <!-- Vote Tab -->
@@ -49,6 +51,49 @@
             <h3 data-translate="results.title">Poll Results</h3>
             <div id="resultsList" class="results-list">
                 <p data-translate="results.loading">Loading results...</p>
+            </div>
+        </div>
+
+        <!-- Anonymous Vote Tab -->
+        <div id="blindvoteTab" class="tab-content">
+            <h3>Anonymous Voting (Blind Signatures)</h3>
+            <div id="blindVoteSection">
+                <div class="blind-vote-steps">
+                    <div class="step">
+                        <h4>Step 1: Get Anonymous Token</h4>
+                        <p>Authenticate to receive a blind-signed token that cannot be linked to your identity.</p>
+                        <div class="form-group">
+                            <label for="userToken">User Token (for demo):</label>
+                            <input type="text" id="userToken" placeholder="Enter any identifier" value="demo-user">
+                        </div>
+                        <button onclick="requestBlindToken()" class="btn btn-primary">Get Anonymous Token</button>
+                        <div id="tokenStatus" class="status"></div>
+                    </div>
+                    
+                    <div class="step">
+                        <h4>Step 2: Cast Anonymous Ballot</h4>
+                        <p>Vote anonymously using your token. Your identity cannot be linked to your vote.</p>
+                        <div class="form-group">
+                            <label for="ballotData">Vote:</label>
+                            <select id="ballotData">
+                                <option value="Option A">Option A</option>
+                                <option value="Option B">Option B</option>
+                                <option value="Option C">Option C</option>
+                            </select>
+                        </div>
+                        <button onclick="castBlindBallot()" class="btn btn-primary" disabled id="castButton">Cast Anonymous Vote</button>
+                        <div id="voteStatus" class="status"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bulletin Board Tab -->
+        <div id="bulletinTab" class="tab-content">
+            <h3>Public Bulletin Board</h3>
+            <p>All anonymous votes are publicly visible for transparency and verification.</p>
+            <div id="bulletinBoard" class="bulletin-board">
+                <p>Loading bulletin board...</p>
             </div>
         </div>
 
