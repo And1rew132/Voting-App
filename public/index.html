@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EU Voting App - Official European Union Voting Platform</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗳️</text></svg>">
+</head>
+<body>
+    <header class="eu-header">
+        <div class="container">
+            <div class="logo">
+                <span class="flag">🇪🇺</span>
+                <h1 data-translate="app.title">EU Voting App</h1>
+            </div>
+            <div class="language-selector">
+                <select id="languageSelect" onchange="changeLanguage(this.value)">
+                    <option value="en">English</option>
+                    <option value="de">Deutsch</option>
+                    <option value="fr">Français</option>
+                </select>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="intro">
+            <h2 data-translate="intro.title">Official European Union Voting Platform</h2>
+            <p data-translate="intro.description">Secure, transparent, and accessible voting for EU citizens. Participate in democratic processes with confidence.</p>
+        </section>
+
+        <div class="tabs">
+            <button class="tab-button active" onclick="showTab('vote')" data-translate="tabs.vote">Vote</button>
+            <button class="tab-button" onclick="showTab('results')" data-translate="tabs.results">Results</button>
+            <button class="tab-button" onclick="showTab('admin')" data-translate="tabs.admin">Admin</button>
+        </div>
+
+        <!-- Vote Tab -->
+        <div id="voteTab" class="tab-content active">
+            <h3 data-translate="vote.title">Active Polls</h3>
+            <div id="pollsList" class="polls-list">
+                <p data-translate="vote.loading">Loading polls...</p>
+            </div>
+        </div>
+
+        <!-- Results Tab -->
+        <div id="resultsTab" class="tab-content">
+            <h3 data-translate="results.title">Poll Results</h3>
+            <div id="resultsList" class="results-list">
+                <p data-translate="results.loading">Loading results...</p>
+            </div>
+        </div>
+
+        <!-- Admin Tab -->
+        <div id="adminTab" class="tab-content">
+            <h3 data-translate="admin.title">Create New Poll</h3>
+            <form id="createPollForm" class="poll-form">
+                <div class="form-group">
+                    <label for="pollQuestion" data-translate="admin.question">Question:</label>
+                    <input type="text" id="pollQuestion" required placeholder="Enter your poll question">
+                </div>
+                
+                <div class="form-group">
+                    <label data-translate="admin.options">Options:</label>
+                    <div id="optionsList">
+                        <div class="option-input">
+                            <input type="text" name="option" placeholder="Option 1" required>
+                            <button type="button" onclick="removeOption(this)" class="remove-btn">Remove</button>
+                        </div>
+                        <div class="option-input">
+                            <input type="text" name="option" placeholder="Option 2" required>
+                            <button type="button" onclick="removeOption(this)" class="remove-btn">Remove</button>
+                        </div>
+                    </div>
+                    <button type="button" onclick="addOption()" class="add-option-btn" data-translate="admin.addOption">Add Option</button>
+                </div>
+                
+                <button type="submit" class="submit-btn" data-translate="admin.create">Create Poll</button>
+            </form>
+        </div>
+    </main>
+
+    <footer class="eu-footer">
+        <div class="container">
+            <p data-translate="footer.text">© 2024 European Union Voting Platform. Committed to democracy, transparency, and accessibility.</p>
+            <div class="footer-links">
+                <a href="#" data-translate="footer.privacy">Privacy Policy</a>
+                <a href="#" data-translate="footer.accessibility">Accessibility</a>
+                <a href="#" data-translate="footer.support">Support</a>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Vote Modal -->
+    <div id="voteModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <h3 id="modalTitle"></h3>
+            <form id="voteForm">
+                <div id="voteOptions" class="vote-options"></div>
+                <div class="form-group">
+                    <label for="voterId" data-translate="vote.voterId">Voter ID (optional):</label>
+                    <input type="text" id="voterId" placeholder="Enter your voter ID">
+                </div>
+                <button type="submit" class="submit-btn" data-translate="vote.submit">Submit Vote</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="translations.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
